@@ -4,79 +4,50 @@
 
 ---
 
-## Примеры запросов
+## Примеры ошибок API
 
-### Регистрация пользователя
+### 1. Ошибка авторизации
 ```
-POST /api/auth/register
-Content-Type: application/json
+HTTP/1.1 401 Unauthorized
 {
-  "email": "user@example.com",
-  "password": "password123",
-  "role": "manager"
+  "error": "Unauthorized",
+  "message": "Invalid or missing token"
 }
 ```
 
-### Вход в систему
+### 2. Нет доступа (недостаточно прав)
 ```
-POST /api/auth/login
-Content-Type: application/json
+HTTP/1.1 403 Forbidden
 {
-  "email": "user@example.com",
-  "password": "password123"
+  "error": "Forbidden",
+  "message": "You do not have permission to perform this action"
 }
 ```
 
-### Получение списка сотрудников
+### 3. Не найдено
 ```
-GET /api/employees
-Authorization: Bearer <jwt-token>
-```
-
-### Создание графика работы
-```
-POST /api/schedule
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
+HTTP/1.1 404 Not Found
 {
-  "employee_id": 123,
-  "date": "2026-03-10",
-  "shift": "day"
+  "error": "Not Found",
+  "message": "Employee not found"
 }
 ```
 
-### Импорт графика по шаблону
+### 4. Ошибка валидации данных
 ```
-POST /api/schedule/import
-Authorization: Bearer <jwt-token>
-Content-Type: multipart/form-data
-file: schedule_template.xlsx
-```
-
-### Экспорт отчёта в PDF
-```
-GET /api/reports/pdf?period=2026-03
-Authorization: Bearer <jwt-token>
-```
-
-### Отправка сообщения в чат
-```
-POST /api/messages
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
+HTTP/1.1 400 Bad Request
 {
-  "chat_id": 5,
-  "text": "Проверьте инвентаризацию на точке №2"
+  "error": "Validation Error",
+  "message": "Field 'email' is required"
 }
 ```
 
-### Подключение Telegram-канала
+### 5. Ошибка сервера
 ```
-POST /api/integrations/telegram
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
+HTTP/1.1 500 Internal Server Error
 {
-  "channel_id": "@worktabel_channel"
+  "error": "Internal Server Error",
+  "message": "Unexpected error occurred"
 }
 ```
 
