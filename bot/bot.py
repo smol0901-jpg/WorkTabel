@@ -27,7 +27,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("supabase_url")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("supabase_key")
 
 print(f"DEBUG: SUPABASE_URL = {SUPABASE_URL}")
-print(f"DEBUG: SUPABASE_KEY = {SUPABASE_KEY[:10] if SUPABASE_KEY else None}...")
+print(f"DEBUG: TELEGRAM_BOT_TOKEN = {TELEGRAM_BOT_TOKEN[:10] if TELEGRAM_BOT_TOKEN else None}...")
 
 # Подключение к Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -284,12 +284,24 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
     
     print("✅ Бот запущен! /start")
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8443)),
-        url_path="webhook",
-        webhook_url=f"https://worktable-bot.onrender.com/webhook"
-    )
+    
+    # Webhook mode
+    PORT = int(os.environ.get("PORT", 8443))
+    WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL")
+    
+    if WEBHOOK_URL:
+        webhook_url = f"{WEBHOOK_URL}/webhook"
+        print(f"🔗 Webhook URL: {webhook_url}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="webhook",
+            webhook_url=webhook_url
+        )
+    else:
+        # Fallback to polling
+        print("⚠️ No RENDER_EXTERNAL_URL, using polling")
+        app.run_polling()
 
 def handle_orders_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
