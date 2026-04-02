@@ -15,7 +15,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters, ConversationHandler
 )
-from supabase import create_client
+from supabase import create_client, Client
 
 # === НАСТРОЙКИ ===
 
@@ -23,11 +23,14 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_GROUP_ID = os.getenv("TELEGRAM_GROUP_ID")
 
 # Supabase настройки
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("supabase_url")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("supabase_key")
+
+print(f"DEBUG: SUPABASE_URL = {SUPABASE_URL}")
+print(f"DEBUG: SUPABASE_KEY = {SUPABASE_KEY[:10] if SUPABASE_KEY else None}...")
 
 # Подключение к Supabase
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # === КЛАВИАТУРЫ ===
 
@@ -285,7 +288,7 @@ def main():
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 8443)),
         url_path="webhook",
-        webhook_url=f"https://worktable-bot-{os.environ.get('RENDER_SERVICE_ID', 'onrender')}.onrender.com/webhook"
+        webhook_url=f"https://worktable-bot.onrender.com/webhook"
     )
 
 def handle_orders_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
