@@ -6,6 +6,7 @@ WorkTable Telegram Bot - Управление графиком работы
 
 import os
 import sys
+import logging
 from datetime import datetime, date, timedelta
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, 
@@ -16,6 +17,10 @@ from telegram.ext import (
     ContextTypes, filters, ConversationHandler
 )
 from supabase import create_client, Client
+
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # === НАСТРОЙКИ ===
 
@@ -283,25 +288,30 @@ def main():
     app.add_handler(CommandHandler("статс", show_stats))
     app.add_handler(CallbackQueryHandler(button_callback))
     
-    print("✅ Бот запущен! /start")
+    print("✅ Бот инициализирован!")
     
     # Webhook mode
     PORT = int(os.environ.get("PORT", 8443))
     WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL")
     
+    print(f"🔌 PORT: {PORT}")
+    print(f"🔗 WEBHOOK_URL: {WEBHOOK_URL}")
+    
     if WEBHOOK_URL:
         webhook_url = f"{WEBHOOK_URL}/webhook"
-        print(f"🔗 Webhook URL: {webhook_url}")
+        print(f"🔗 Setting webhook to: {webhook_url}")
+        
         app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
             url_path="webhook",
-            webhook_url=webhook_url
+            webhook_url=webhook_url,
+            drop_pending_updates=True
         )
     else:
         # Fallback to polling
         print("⚠️ No RENDER_EXTERNAL_URL, using polling")
-        app.run_polling()
+        app.run_polling(drop_pending_updates=True)
 
 def handle_orders_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
