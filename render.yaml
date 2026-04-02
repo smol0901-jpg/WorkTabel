@@ -15,3 +15,5 @@ services:
         value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwd2V3bWliZmlla2JnaXhjeCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQ0NzI2NzIwLCJleHAiOjE5NTk4MDY3MjB9.5hmyLzEIpWUE9w2rVJ_kA_S1_HLQs7"
       - key: PORT
         value: "8443"
+      - key: RENDER_EXTERNAL_URL
+        value: "https://worktable-bot.onrender.com"
