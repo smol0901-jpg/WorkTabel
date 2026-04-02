@@ -1,83 +1,109 @@
 -- WorkTable Database Migration
--- Выполните этот скрипт в SQL Editor Supabase
+-- Создание таблиц для системы управления питанием
 
--- 1. Создаём таблицу users
-create table if not exists public.users (
-  id uuid not null primary key references auth.users(id) on delete cascade,
-  email text not null,
-  name text,
-  role text default 'partner' check (role in ('partner', 'admin')),
-  is_active boolean default false,
-  created_at timestamp with time zone default now()
+-- Таблица пользователей (партнёров)
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_id BIGINT UNIQUE,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE,
+    phone TEXT,
+    role TEXT DEFAULT 'partner' CHECK (role IN ('partner', 'admin')),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. Создаём таблицу menus
-create table if not exists public.menus (
-  id uuid default gen_random_uuid() primary key,
-  date date not null unique,
-  day_type text,
-  breakfast text,
-  lunch text,
-  dinner text,
-  mode text default '5/2' check (mode in ('5/2', '7/0')),
-  created_at timestamp with time zone default now()
+-- Таблица меню
+CREATE TABLE IF NOT EXISTS menus (
+    id BIGSERIAL PRIMARY KEY,
+    date DATE NOT NULL UNIQUE,
+    breakfast TEXT,
+    lunch TEXT,
+    dinner TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. Создаём таблицу orders
-create table if not exists public.orders (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.users(id) on delete cascade,
-  start_date date not null,
-  end_date date not null,
-  person_count integer not null default 1,
-  mode text default '5/2',
-  status text default 'pending' check (status in ('pending', 'confirmed', 'sent')),
-  created_at timestamp with time zone default now()
+-- Таблица заказов
+CREATE TABLE IF NOT EXISTS orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    person_count INTEGER NOT NULL DEFAULT 1,
+    mode TEXT NOT NULL DEFAULT '5/2' CHECK (mode IN ('5/2', '7/0')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'sent', 'rejected')),
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. Включаем RLS
-alter table public.users enable row level security;
-alter table public.menus enable row level security;
-alter table public.orders enable row level security;
+-- Индексы для быстрого поиска
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_menus_date ON menus(date);
+CREATE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_id);
 
--- 5. Политики для users
-create policy "Users can read own profile" on public.users for select using (auth.uid() = id);
-create policy "Users can update own profile" on public.users for update using (auth.uid() = id);
-create policy "Admins can manage all users" on public.users for all using (
-  exists (select 1 from public.users where id = auth.uid() and role = 'admin')
-);
+-- RLS политики (безопасность)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE menus ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
--- 6. Политики для menus
-create policy "Anyone can read menus" on public.menus for select using (true);
-create policy "Admins can manage menus" on public.menus for all using (
-  exists (select 1 from public.users where id = auth.uid() and role = 'admin')
-);
+-- Полики для users
+CREATE POLICY "Anyone can read users" ON users FOR SELECT USING (true);
+CREATE POLICY "Anyone can insert users" ON users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can update users" ON users FOR UPDATE USING (true);
 
--- 7. Политики для orders
-create policy "Users can create orders" on public.orders for insert with check (auth.uid() = user_id);
-create policy "Users can read own orders" on public.orders for select using (auth.uid() = user_id);
-create policy "Users can update own orders" on public.orders for update using (auth.uid() = user_id);
-create policy "Admins can manage all orders" on public.orders for all using (
-  exists (select 1 from public.users where id = auth.uid() and role = 'admin')
-);
+-- Полики для menus
+CREATE POLICY "Anyone can read menus" ON menus FOR SELECT USING (true);
+CREATE POLICY "Anyone can insert menus" ON menus FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can update menus" ON menus FOR UPDATE USING (true);
 
--- 8. Функция для автоматического создания пользователя
-create or replace function public.handle_new_user()
-returns trigger as $$
-begin
-  insert into public.users (id, email, name, role, is_active)
-  values (new.id, new.email, new.raw_user_meta_data->>'name', 'partner', false);
-  return new;
-end;
-$$ language plpgsql security definer;
+-- Полики для orders
+CREATE POLICY "Anyone can read orders" ON orders FOR SELECT USING (true);
+CREATE POLICY "Anyone can insert orders" ON orders FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can update orders" ON orders FOR UPDATE USING (true);
 
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+-- Функция для автоматического обновления updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
--- 9. Индексы
-create index idx_menus_date on public.menus(date);
-create index idx_menus_mode on public.menus(mode);
-create index idx_orders_user_id on public.orders(user_id);
-create index idx_orders_status on public.orders(status);
-create index idx_users_role on public.users(role);
+-- Триггеры для updated_at
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_menus_updated_at BEFORE UPDATE ON menus
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Тестовые данные
+INSERT INTO users (telegram_id, name, email, role, is_active) 
+VALUES 
+    (123456789, 'Тестовый партнёр', 'test@example.com', 'partner', true),
+    (987654321, 'Администратор', 'admin@worktable.ru', 'admin', true)
+ON CONFLICT (telegram_id) DO NOTHING;
+
+INSERT INTO menus (date, breakfast, lunch, dinner) 
+VALUES 
+    (CURRENT_DATE, 'Каша овсяная, чай', 'Борщ, салат, компот', 'Рыба на пару, овощи'),
+    (CURRENT_DATE + 1, 'Яичница, хлеб', 'Суп куриный, второе', 'Котлеты, картофель')
+ON CONFLICT (date) DO NOTHING;
+
+INSERT INTO orders (user_id, start_date, end_date, person_count, mode, status)
+SELECT 
+    (SELECT id FROM users WHERE role = 'partner' LIMIT 1),
+    CURRENT_DATE,
+    CURRENT_DATE + 6,
+    5,
+    '5/2',
+    'pending'
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'partner');
