@@ -5,6 +5,7 @@ WorkTable Telegram Bot - Полный админ-кабинет с Supabase
 
 Токен: 6706048508:AAF-8INmBKwP1x7DA-_ET8D282c5pp0Rn2Y
 Группа: -1002583331823
+Supabase: https://xpxewmimbfiekbkigbxc.supabase.co
 """
 
 import os
@@ -18,42 +19,18 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters, ConversationHandler
 )
-from supabase import create_client, create_client_from_env
+from supabase import create_client
 
 # === КОНФИГУРАЦИЯ ===
 TELEGRAM_BOT_TOKEN = "6706048508:AAF-8INmBKwP1x7DA-_ET8D282c5pp0Rn2Y"
 TELEGRAM_GROUP_ID = "-1002583331823"
 
 # Supabase настройки
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+SUPABASE_URL = "https://xpxewmimbfiekbkigbxc.supabase.co"
+SUPABASE_KEY = "n2Kh7KWcCXRqQucIIamnAky7gbWGI4kr4U74H90z+MVLCXGSVzAeluS8i001Y1aAWsTBo5bFZnSNdfTvgNp2nw=="
 
 # Инициализация Supabase
-supabase = None
-db_connected = False
-
-def init_supabase():
-    """Инициализация подключения к Supabase"""
-    global supabase, db_connected
-    
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("⚠️ Supabase не настроен. Используйте переменные окружения:")
-        print("  export SUPABASE_URL='https://your-project.supabase.co'")
-        print("  export SUPABASE_KEY='your-anon-key'")
-        db_connected = False
-        return False
-    
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # Проверка подключения
-        result = supabase.table('users').select('id').limit(1).execute()
-        db_connected = True
-        print("✅ Supabase подключён!")
-        return True
-    except Exception as e:
-        print(f"❌ Ошибка подключения к Supabase: {e}")
-        db_connected = False
-        return False
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # === КЛАВИАТУРЫ ===
 
@@ -97,14 +74,12 @@ def get_menu_keyboard():
 # === ОБРАБОТЧИКИ КОМАНД ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветствие и главное меню"""
     user = update.effective_user
-    db_status = "✅" if db_connected else "❌"
     
     welcome_text = f"""
 👋 *Добро пожаловать в WorkTable!*
 
-База данных: {db_status}
+База данных: ✅ Подключена
 Ваш ID: `{user.id}`
 
 Выберите раздел:
@@ -118,7 +93,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return 1
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Справка"""
     help_text = """
 📖 *Справка WorkTable*
 
@@ -126,16 +100,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /menu - Меню на сегодня
 /orders - Последние заказы
 /stats - Статистика
-/panel - Админ-кабинет
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def show_menu_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать меню на сегодня"""
-    if not db_connected:
-        await update.message.reply_text("❌ База данных не подключена")
-        return
-    
     today = str(date.today())
     result = supabase.table('menus').select('*').eq('date', today).execute()
     
@@ -150,11 +118,6 @@ async def show_menu_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 Меню на сегодня не найдено\n\nИспользуйте /menu для добавления")
 
 async def show_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать заказы"""
-    if not db_connected:
-        await update.message.reply_text("❌ База данных не подключена")
-        return
-    
     result = supabase.table('orders').select('*, users(name, email)').order('created_at', ascending=False).limit(10).execute()
     
     if result.data:
@@ -167,17 +130,10 @@ async def show_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 Заказов пока нет")
 
 async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать статистику"""
-    if not db_connected:
-        await update.message.reply_text("❌ База данных не подключена")
-        return
-    
-    # Заказы
     pending = supabase.table('orders').select('id', count='exact', head=True).eq('status', 'pending').execute()
     confirmed = supabase.table('orders').select('id', count='exact', head=True).eq('status', 'confirmed').execute()
     sent = supabase.table('orders').select('id', count='exact', head=True).eq('status', 'sent').execute()
     
-    # Партнёры
     all_users = supabase.table('users').select('id', count='exact', head=True).eq('role', 'partner').execute()
     active = supabase.table('users').select('id', count='exact', head=True).eq('role', 'partner').eq('is_active', True).execute()
     
@@ -221,10 +177,6 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return 1
 
 async def show_all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not db_connected:
-        await update.message.reply_text("❌ База данных не подключена")
-        return 1
-    
     result = supabase.table('orders').select('*, users(name, email)').order('created_at', ascending=False).execute()
     
     if not result.data:
@@ -249,10 +201,6 @@ async def show_all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return 2
 
 async def show_all_partners(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not db_connected:
-        await update.message.reply_text("❌ База данных не подключена")
-        return 1
-    
     result = supabase.table('users').select('*').eq('role', 'partner').order('created_at', ascending=False).execute()
     
     if not result.data:
@@ -272,10 +220,6 @@ async def show_all_partners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return 3
 
 async def show_menu_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not db_connected:
-        await update.message.reply_text("❌ База данных не подключена")
-        return 1
-    
     today = str(date.today())
     result = supabase.table('menus').select('*').eq('date', today).execute()
     
@@ -292,22 +236,16 @@ async def show_menu_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return 4
 
 async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = f"""
+    text = """
 ⚙️ *Настройки*
 
 *Подключение:*
-• Supabase: {'✅ Подключён' if db_connected else '❌ Не подключён'}
-• URL: `{SUPABASE_URL[:30]}...` если настроен
+• Supabase: ✅ Подключён
+• URL: `xpxewmimbfiekbkigbxc.supabase.co`
 
 *Бот:*
 • Токен: `6706048508:AAF-...`
 • Группа: `-1002583331823`
-
-*Команды для настройки Supabase:*
-```
-export SUPABASE_URL="https://xxx.supabase.co"
-export SUPABASE_KEY="xxx"
-```
     """
     
     await update.message.reply_text(text, parse_mode='Markdown', reply_markup=get_main_keyboard())
@@ -323,22 +261,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data.startswith("order_confirm_"):
         order_id = data.split("_")[2]
-        if db_connected:
-            supabase.table('orders').update({'status': 'confirmed'}).eq('id', order_id).execute()
+        supabase.table('orders').update({'status': 'confirmed'}).eq('id', order_id).execute()
         await query.edit_message_text("✅ Заказ подтверждён!")
     elif data.startswith("order_reject_"):
         order_id = data.split("_")[2]
-        if db_connected:
-            supabase.table('orders').update({'status': 'rejected'}).eq('id', order_id).execute()
+        supabase.table('orders').update({'status': 'rejected'}).eq('id', order_id).execute()
         await query.edit_message_text("❌ Заказ отклонён")
 
 # === MAIN ===
 
 def main():
     print("🚀 Запуск WorkTable Admin Bot...")
-    
-    # Инициализация Supabase
-    init_supabase()
+    print(f"✅ Supabase: {SUPABASE_URL}")
     
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
@@ -365,50 +299,20 @@ def main():
 
 def handle_orders_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    
-    if text == "📋 Все заказы":
-        return 2
-    elif text == "⏳ Ожидают":
-        return 2
-    elif text == "✅ Подтверждённые":
-        return 2
-    elif text == "📤 Отправленные":
-        return 2
-    elif text == "🔙 Главное меню":
+    if text == "🔙 Главное меню":
         return 1
-    
     return 2
 
 def handle_partners_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    
-    if text == "👥 Все партнёры":
-        return 3
-    elif text == "✅ Активные":
-        return 3
-    elif text == "❌ Неактивные":
-        return 3
-    elif text == "➕ Добавить партнёра":
-        return 3
-    elif text == "🔙 Главное меню":
+    if text == "🔙 Главное меню":
         return 1
-    
     return 3
 
 def handle_menu_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    
-    if text == "🍽 Меню на сегодня":
-        return 4
-    elif text == "📅 Меню на неделю":
-        return 4
-    elif text == "➕ Добавить блюдо":
-        return 4
-    elif text == "✏️ Редактировать":
-        return 4
-    elif text == "🔙 Главное меню":
+    if text == "🔙 Главное меню":
         return 1
-    
     return 4
 
 if __name__ == '__main__':
