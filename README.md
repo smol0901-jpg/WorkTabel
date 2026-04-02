@@ -2,88 +2,116 @@
 
 Веб-приложение для управления питанием в общепите с интеграцией Telegram бота.
 
-## Быстрый старт
+## 🚀 Быстрый старт
 
-### 1. Настройка Supabase
+### 1. Supabase (База данных)
+
 1. Создайте проект на [supabase.com](https://supabase.com)
-2. Создайте таблицы:
-```sql
--- Таблица пользователей
-create table users (
-  id uuid primary key references auth.users,
-  email text,
-  name text,
-  role text default 'partner',
-  is_active boolean default false,
-  created_at timestamp with time zone default now()
-);
+2. Откройте **SQL Editor**
+3. Скопируйте содержимое файла `supabase/migration.sql` и выполните
+4. Скопируйте **Project URL** и **anon public key** из Settings → API
 
--- Таблица меню
-create table menus (
-  id uuid primary key default gen_random_uuid(),
-  date date not null,
-  day_type text,
-  breakfast text,
-  lunch text,
-  dinner text,
-  mode text default '5/2'
-);
+### 2. Веб-приложение
 
--- Таблица заказов
-create table orders (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references users(id),
-  start_date date not null,
-  end_date date not null,
-  person_count integer,
-  mode text,
-  status text default 'pending',
-  created_at timestamp with time zone default now()
-);
-
--- Включить RLS
-alter table users enable row level security;
-alter table menus enable row level security;
-alter table orders enable row level security;
-
--- Политики
-create policy "Users can read own data" on users for select using (auth.uid() = id);
-create policy "Users can read menus" on menus for select using (true);
-create policy "Users can create orders" on orders for insert with check (auth.uid() = user_id);
-create policy "Users can read own orders" on orders for select using (auth.uid() = user_id);
-```
-
-### 2. Настройка приложения
 ```bash
-npm install
-```
+# Клонирование
+git clone https://github.com/smol0901-jpg/WorkTabel.git
+cd WorkTabel
 
-Скопируйте `.env.example` в `.env` и заполните:
-```
-VITE_SUPABASE_URL=ваш-url
-VITE_SUPABASE_ANON_KEY=ваш-anon-key
+# Установка зависимостей
+npm install
+
+# Настройка переменных
+cp .env.example .env
+# Отредактируйте .env с вашими данными Supabase
+
+# Запуск локально
+npm run dev
 ```
 
 ### 3. Деплой на Netlify
-1. Подключите репозиторий к Netlify
-2. Добавьте переменные окружения
+
+1. Подключите репозиторий к [Netlify](https://netlify.com)
+2. В настройках добавьте переменные:
+   - `VITE_SUPABASE_URL` = ваш-url
+   - `VITE_SUPABASE_ANON_KEY` = ваш-ключ
 3. Деплой произойдёт автоматически
 
-## Функционал
+### 4. Telegram Бот
 
-### Партнёры
-- Регистрация и вход
-- Просмотр меню на неделю
-- Создание заказов
-- История заказов
+```bash
+cd bot
 
-### Администратор
-- Активация партнёров
-- Подтверждение заказов
-- Отправка в Telegram
+# Установка зависимостей
+pip install -r requirements.txt
 
-## Технологии
-- React + Vite
-- Supabase (база данных)
-- Netlify (хостинг)
-- Telegram Bot API
+# Настройка
+cp ../scripts/.env.example .env
+# Отредактируйте .env
+
+# Запуск
+python3 bot.py
+```
+
+## 📁 Структура проекта
+
+```
+WorkTable/
+├── src/                    # React приложение
+│   ├── pages/             # Страницы
+│   │   ├── Login.jsx      # Вход/регистрация
+│   │   ├── Dashboard.jsx  # Главная
+│   │   ├── Menu.jsx       # Меню
+│   │   ├── Orders.jsx     # Заказы
+│   │   └── Admin.jsx      # Админ-панель
+│   ├── lib/supabase.js    # Подключение к БД
+│   ├── App.jsx            # Главный компонент
+│   └── index.css          # Стили
+├── supabase/
+│   └── migration.sql      # Миграция БД
+├── scripts/
+│   └── sync_menu.py       # Синхронизация из Google Таблицы
+├── bot/
+│   └── bot.py             # Telegram бот
+├── netlify.toml           # Конфиг Netlify
+└── package.json
+```
+
+## 🔧 Настройка Google Таблицы (опционально)
+
+1. Создайте таблицу с двумя листами: `5/2` и `7/0`
+2. Формат:
+   | Дата     | Завтрак | Обед   | Ужин   |
+   |----------|---------|--------|--------|
+   | 2026-04-01| Каша   | Борщ  | Рыба   |
+3. Опубликуйте таблицу (Файл → Опубликовать в интернете)
+4. Настройте CRON для запуска `scripts/sync_menu.py`
+
+## 👥 Роли
+
+- **partner** — партнёр (пользователь)
+- **admin** — администратор
+
+## 📝 API Endpoints
+
+### Menus
+- `GET /menus` — получить меню
+- `POST /menus` — создать меню (админ)
+- `PUT /menus/:id` — обновить меню (админ)
+
+### Orders
+- `GET /orders` — получить заказы пользователя
+- `POST /orders` — создать заказ
+- `PUT /orders/:id` — обновить статус (админ)
+
+### Users
+- `GET /users` — список пользователей (админ)
+- `PUT /users/:id` — активировать/деактивировать (админ)
+
+## 🛠 Технологии
+
+- **Frontend:** React + Vite
+- **Backend:** Supabase (PostgreSQL + Auth)
+- **Hosting:** Netlify
+- **Bot:** Python + python-telegram-bot
+- **Sync:** Python + Google Sheets API
