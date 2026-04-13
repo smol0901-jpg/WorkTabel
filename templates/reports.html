@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TimeTrack Pro - Отчёты</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: #1a1a2e;
+        }
+        .sidebar a {
+            color: #fff;
+            padding: 15px 20px;
+            display: block;
+            text-decoration: none;
+            border-left: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .sidebar a:hover, .sidebar a.active {
+            background: #16213e;
+            border-left-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 sidebar p-0">
+                <div class="p-3 text-center border-bottom border-secondary">
+                    <h4 class="text-white">⏱️ TimeTrack</h4>
+                </div>
+                <a href="/dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
+                <a href="/employees"><i class="bi bi-people me-2"></i>Сотрудники</a>
+                <a href="/reports" class="active"><i class="bi bi-file-earmark-bar-graph me-2"></i>Отчёты</a>
+                <a href="/settings"><i class="bi bi-gear me-2"></i>Настройки</a>
+                <a href="/logout"><i class="bi bi-box-arrow-right me-2"></i>Выход</a>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="col-md-10 p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>Отчёты</h2>
+                    <span class="text-muted">{{ start_date }} - {{ end_date }}</span>
+                </div>
+                
+                <!-- Сводка -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Сводка за период</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Сотрудник</th>
+                                    <th>Записей</th>
+                                    <th>Часов</th>
+                                    <th>Стоимость</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in summary %}
+                                <tr>
+                                    <td><strong>{{ row[0] }}</strong></td>
+                                    <td>{{ row[1] }}</td>
+                                    <td>{{ '%.1f'|format((row[2] or 0)/60) }} ч</td>
+                                    <td>{{ '%.2f'|format(row[3] or 0) }} ₽</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">Нет данных за период</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Детализация -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Детализация</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Дата</th>
+                                    <th>Сотрудник</th>
+                                    <th>Время</th>
+                                    <th>Часы</th>
+                                    <th>Проект</th>
+                                    <th>Задача</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in entries %}
+                                <tr>
+                                    <td>{{ entry.date }}</td>
+                                    <td>{{ entry.employee_name }}</td>
+                                    <td>{{ entry.start_time }} - {{ entry.end_time or '...' }}</td>
+                                    <td>
+                                        {% if entry.end_time %}
+                                            {% set start = entry.start_time.split(':') %}
+                                            {% set end = entry.end_time.split(':') %}
+                                            {% set mins = (int(end[0])*60 + int(end[1])) - (int(start[0])*60 + int(start[1])) - (entry.break_minutes or 0) %}
+                                            {{ '%.2f'|format(mins/60) }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ entry.project or '-' }}</td>
+                                    <td>{{ entry.task_description or '-' }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">Нет записей</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
