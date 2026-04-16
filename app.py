@@ -1,21 +1,16 @@
-# -*- coding: utf-8 -*-
-"""
-TimeTrack Pro - Система учёта рабочего времени
-Основное приложение на Flask
-"""
-
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 from datetime import datetime, timedelta
 import sqlite3
 import os
+import hashlib
+import secrets
 from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24).hex()
 
 # Конфигурация
-DATABASE = 'timetrack.db'
-ADMIN_PIN = '1234'
+DATABASE = 'foodapp.db'
 
 # Подключение к БД
 def get_db():
@@ -28,67 +23,160 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
     
-    # Таблица сотрудников
-    c.execute('''CREATE TABLE IF NOT EXISTS employees (
+    # Пользователи
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        role TEXT NOT NULL,
+        full_name TEXT,
+        assigned_clients TEXT,
+        assigned_production TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Клиенты
+    c.execute('''CREATE TABLE IF NOT EXISTS clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        position TEXT,
-        hourly_rate REAL DEFAULT 0,
-        active INTEGER DEFAULT 1,
+        official_name TEXT,
+        inn TEXT,
+        director TEXT,
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        manager_id INTEGER,
+        contract_type TEXT,
+        price REAL DEFAULT 0,
+        delay_days INTEGER DEFAULT 0,
+        discount REAL DEFAULT 0,
+        status TEXT DEFAULT 'Активен',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Таблица записей времени
-    c.execute('''CREATE TABLE IF NOT EXISTS time_entries (
+    # Производство
+    c.execute('''CREATE TABLE IF NOT EXISTS production (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        employee_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        product_type TEXT,
+        volume REAL DEFAULT 0,
+        exclusions TEXT,
+        contacts TEXT,
+        address TEXT,
+        price REAL DEFAULT 0,
+        status TEXT DEFAULT 'Активен',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Блюда
+    c.execute('''CREATE TABLE IF NOT EXISTS dishes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        weight INTEGER DEFAULT 0,
+        composition TEXT,
+        allergens TEXT,
+        category TEXT,
+        cost REAL DEFAULT 0,
+        price REAL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Меню
+    c.execute('''CREATE TABLE IF NOT EXISTS menu (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         date DATE NOT NULL,
-        start_time TIME NOT NULL,
-        end_time TIME,
-        break_minutes INTEGER DEFAULT 0,
-        task_description TEXT,
-        project TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (employee_id) REFERENCES employees (id)
-    )''')
-    
-    # Таблица проектов
-    c.execute('''CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        color TEXT DEFAULT '#3498db',
-        active INTEGER DEFAULT 1,
+        day TEXT,
+        meal_type TEXT,
+        dish_id INTEGER,
+        client_id INTEGER,
+        weight INTEGER DEFAULT 0,
+        price REAL DEFAULT 0,
+        status TEXT DEFAULT 'Активно',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Таблица настроек
-    c.execute('''CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
+    # Заказы
+    c.execute('''CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date DATE NOT NULL,
+        client_id INTEGER,
+        dish_id INTEGER,
+        quantity INTEGER DEFAULT 0,
+        price REAL DEFAULT 0,
+        total REAL DEFAULT 0,
+        cost REAL DEFAULT 0,
+        profit REAL DEFAULT 0,
+        manager_id INTEGER,
+        payment_status TEXT DEFAULT 'Ожидает',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Добавляем тестовые данные если БД пустая
-    c.execute('SELECT COUNT(*) FROM employees')
+    # Сообщения
+    c.execute('''CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        recipient_id INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read INTEGER DEFAULT 0
+    )''')
+    
+    # Файлы
+    c.execute('''CREATE TABLE IF NOT EXISTS files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        owner_id INTEGER NOT NULL,
+        recipient_id INTEGER,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Обратная связь
+    c.execute('''CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_resolved INTEGER DEFAULT 0
+    )''')
+    
+    # Логи
+    c.execute('''CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        action TEXT NOT NULL,
+        details TEXT,
+        ip_address TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Создаём админа
+    c.execute("SELECT COUNT(*) FROM users WHERE role='admin'")
     if c.fetchone()[0] == 0:
-        # Добавляем сотрудников
-        c.execute("INSERT INTO employees (name, position, hourly_rate) VALUES ('Иван Иванов', 'Менеджер', 500)")
-        c.execute("INSERT INTO employees (name, position, hourly_rate) VALUES ('Петр Петров', 'Разработчик', 800)")
-        c.execute("INSERT INTO employees (name, position, hourly_rate) VALUES ('Анна Сидорова', 'Дизайнер', 600)")
-        
-        # Добавляем проекты
-        c.execute("INSERT INTO projects (name, color) VALUES ('Основной проект', '#3498db')")
-        c.execute("INSERT INTO projects (name, color) VALUES ('Внутренние задачи', '#e74c3c')")
-        c.execute("INSERT INTO projects (name, color) VALUES ('Встречи', '#2ecc71')")
-        
-        # Добавляем настройки
-        c.execute("INSERT INTO settings (key, value) VALUES ('work_start', '09:00')")
-        c.execute("INSERT INTO settings (key, value) VALUES ('work_end', '18:00')")
-        c.execute("INSERT INTO settings (key, value) VALUES ('break_duration', '60')")
+        admin_hash = hashlib.sha256("admin123".encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password_hash, email, role, full_name) VALUES (?, ?, ?, ?, ?)",
+                  ("admin", admin_hash, "admin@foodapp.ru", "admin", "Администратор"))
     
     conn.commit()
     conn.close()
 
-# Декоратор для проверки авторизации
+# Хелперы
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return hash_password(plain_password) == hashed_password
+
+def log_action(user_id: int, action: str, details: str = "", ip: str = ""):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)",
+              (user_id, action, details, ip))
+    conn.commit()
+    conn.close()
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -97,257 +185,306 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def role_required(roles):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'role' not in session or session.get('role') not in roles:
+                flash('Нет доступа', 'error')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
 # Маршруты
 
 @app.route('/')
 def index():
-    """Главная страница"""
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
-    return render_template('login.html')
+    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Вход в систему"""
     if request.method == 'POST':
-        pin = request.form.get('pin')
-        if pin == ADMIN_PIN:
-            session['user_id'] = 1
-            session['is_admin'] = True
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM users WHERE username = ? AND is_active = 1", (username,))
+        user = c.fetchone()
+        conn.close()
+        
+        if user and verify_password(password, user['password_hash']):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            session['full_name'] = user['full_name']
+            log_action(user['id'], 'login', f'User {username} logged in')
             return redirect(url_for('dashboard'))
         else:
-            flash('Неверный PIN', 'error')
+            flash('Неверный логин или пароль', 'error')
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
-    """Выход из системы"""
+    user_id = session.get('user_id')
+    if user_id:
+        log_action(user_id, 'logout', 'User logged out')
     session.clear()
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    """Панель управления"""
     conn = get_db()
     c = conn.cursor()
     
-    # Получаем сотрудников
-    c.execute('SELECT * FROM employees WHERE active = 1')
-    employees = c.fetchall()
+    user_role = session.get('role')
+    user_id = session.get('user_id')
     
-    # Получаем проекты
-    c.execute('SELECT * FROM projects WHERE active = 1')
-    projects = c.fetchall()
-    
-    # Получаем сегодняшние записи
-    today = datetime.now().date()
-    c.execute('''SELECT te.*, e.name as employee_name 
-                 FROM time_entries te 
-                 JOIN employees e ON te.employee_id = e.id 
-                 WHERE te.date = ? 
-                 ORDER BY te.start_time DESC''', (today,))
-    today_entries = c.fetchall()
-    
-    # Статистика за неделю
-    week_start = today - timedelta(days=today.weekday())
-    c.execute('''SELECT e.name, SUM(
-        (julianday(te.end_time) - julianday(te.start_time)) * 24 * 60 - te.break_minutes
-    ) as total_minutes
-    FROM time_entries te
-    JOIN employees e ON te.employee_id = e.id
-    WHERE te.date >= ? AND te.date <= ? AND te.end_time IS NOT NULL
-    GROUP BY e.id''', (week_start, today))
-    week_stats = c.fetchall()
+    if user_role == 'admin':
+        # Статистика
+        c.execute("SELECT COUNT(*) as c FROM users WHERE role='manager'")
+        managers = c.fetchone()['c']
+        
+        c.execute("SELECT COUNT(*) as c FROM clients")
+        clients = c.fetchone()['c']
+        
+        c.execute("SELECT COUNT(*) as c FROM production")
+        production = c.fetchone()['c']
+        
+        c.execute("SELECT COUNT(*) as c FROM orders WHERE date = date('now')")
+        today_orders = c.fetchone()['c']
+        
+        c.execute("SELECT SUM(profit) as t FROM orders WHERE date = date('now')")
+        today_profit = c.fetchone()['t'] or 0
+        
+        # Активность
+        c.execute('''SELECT u.username, u.role, COUNT(l.id) as a 
+                     FROM users u 
+                     LEFT JOIN logs l ON u.id = l.user_id AND l.timestamp > datetime('now', '-24 hours')
+                     GROUP BY u.id''')
+        activity = c.fetchall()
+        
+        # Заказы
+        c.execute('''SELECT o.*, c.name as cn, d.name as dn 
+                     FROM orders o 
+                     JOIN clients c ON o.client_id = c.id 
+                     JOIN dishes d ON o.dish_id = d.id
+                     ORDER BY o.created_at DESC LIMIT 10''')
+        orders = c.fetchall()
+        
+        data = {
+            'managers': managers,
+            'clients': clients,
+            'production': production,
+            'today_orders': today_orders,
+            'today_profit': today_profit,
+            'activity': activity,
+            'orders': orders
+        }
+    else:  # manager
+        c.execute("SELECT id FROM users WHERE username = ?", (session['username'],))
+        manager = c.fetchone()
+        manager_id = manager['id']
+        
+        c.execute("SELECT COUNT(*) as c FROM clients WHERE manager_id = ?", (manager_id,))
+        my_clients = c.fetchone()['c']
+        
+        c.execute("SELECT COUNT(*) as c FROM orders WHERE manager_id = ? AND date = date('now')", (manager_id,))
+        my_orders = c.fetchone()['c']
+        
+        c.execute("SELECT SUM(profit) as t FROM orders WHERE manager_id = ? AND date = date('now')", (manager_id,))
+        my_profit = c.fetchone()['t'] or 0
+        
+        c.execute("SELECT COUNT(*) as c FROM messages WHERE recipient_id = ? AND is_read = 0", (manager_id,))
+        unread = c.fetchone()['c']
+        
+        c.execute('''SELECT o.*, c.name as cn, d.name as dn 
+                     FROM orders o 
+                     JOIN clients c ON o.client_id = c.id 
+                     JOIN dishes d ON o.dish_id = d.id
+                     WHERE o.manager_id = ?
+                     ORDER BY o.created_at DESC LIMIT 10''', (manager_id,))
+        my_orders_list = c.fetchall()
+        
+        data = {
+            'my_clients': my_clients,
+            'my_orders': my_orders,
+            'my_profit': my_profit,
+            'unread': unread,
+            'orders': my_orders_list
+        }
     
     conn.close()
-    
-    return render_template('dashboard.html', 
-                         employees=employees,
-                         projects=projects,
-                         today_entries=today_entries,
-                         week_stats=week_stats,
-                         today=today)
+    return render_template('dashboard.html', data=data, role=user_role)
 
-@app.route('/employees')
+@app.route('/clients')
 @login_required
-def employees():
-    """Управление сотрудниками"""
+@role_required(['admin', 'manager'])
+def clients():
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT * FROM employees ORDER BY name')
-    employees = c.fetchall()
+    
+    if session.get('role') == 'manager':
+        c.execute("SELECT id FROM users WHERE username = ?", (session['username'],))
+        manager = c.fetchone()
+        c.execute("SELECT * FROM clients WHERE manager_id = ?", (manager['id'],))
+    else:
+        c.execute("SELECT * FROM clients")
+    
+    clients_list = c.fetchall()
     conn.close()
-    return render_template('employees.html', employees=employees)
+    return render_template('clients.html', clients=clients_list)
 
-@app.route('/employees/add', methods=['POST'])
+@app.route('/production')
 @login_required
-def add_employee():
-    """Добавить сотрудника"""
-    name = request.form.get('name')
-    position = request.form.get('position')
-    hourly_rate = request.form.get('hourly_rate', 0)
+@role_required(['admin', 'manager'])
+def production():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM production")
+    production_list = c.fetchall()
+    conn.close()
+    return render_template('production.html', production=production_list)
+
+@app.route('/orders')
+@login_required
+def orders():
+    conn = get_db()
+    c = conn.cursor()
+    
+    if session.get('role') == 'admin':
+        c.execute('''SELECT o.*, c.name as cn, d.name as dn, u.username as mn
+                     FROM orders o 
+                     JOIN clients c ON o.client_id = c.id 
+                     JOIN dishes d ON o.dish_id = d.id
+                     JOIN users u ON o.manager_id = u.id
+                     ORDER BY o.created_at DESC''')
+    elif session.get('role') == 'manager':
+        c.execute("SELECT id FROM users WHERE username = ?", (session['username'],))
+        manager = c.fetchone()
+        c.execute('''SELECT o.*, c.name as cn, d.name as dn
+                     FROM orders o 
+                     JOIN clients c ON o.client_id = c.id 
+                     JOIN dishes d ON o.dish_id = d.id
+                     WHERE o.manager_id = ?
+                     ORDER BY o.created_at DESC''', (manager['id'],))
+    else:
+        c.execute('''SELECT o.*, c.name as cn, d.name as dn
+                     FROM orders o 
+                     JOIN clients c ON o.client_id = c.id 
+                     JOIN dishes d ON o.dish_id = d.id
+                     ORDER BY o.created_at DESC''')
+    
+    orders_list = c.fetchall()
+    conn.close()
+    return render_template('orders.html', orders=orders_list)
+
+@app.route('/messages')
+@login_required
+def messages():
+    conn = get_db()
+    c = conn.cursor()
+    
+    user_id = session.get('user_id')
+    
+    # Полученные
+    c.execute('''SELECT m.*, u.username as sender_name, u.full_name as sender_full
+                FROM messages m 
+                JOIN users u ON m.sender_id = u.id
+                WHERE m.recipient_id = ?
+                ORDER BY m.timestamp DESC''', (user_id,))
+    received = c.fetchall()
+    
+    # Отправленные
+    c.execute('''SELECT m.*, u.username as recipient_name, u.full_name as recipient_full
+                FROM messages m 
+                JOIN users u ON m.recipient_id = u.id
+                WHERE m.sender_id = ?
+                ORDER BY m.timestamp DESC''', (user_id,))
+    sent = c.fetchall()
+    
+    # Все пользователи для отправки
+    c.execute("SELECT id, username, full_name, role FROM users WHERE id != ?", (user_id,))
+    users = c.fetchall()
+    
+    conn.close()
+    return render_template('messages.html', received=received, sent=sent, users=users)
+
+@app.route('/send_message', methods=['POST'])
+@login_required
+def send_message():
+    recipient_id = request.form.get('recipient_id')
+    content = request.form.get('content')
     
     conn = get_db()
     c = conn.cursor()
-    c.execute('INSERT INTO employees (name, position, hourly_rate) VALUES (?, ?, ?)',
-              (name, position, hourly_rate))
+    c.execute("INSERT INTO messages (sender_id, recipient_id, content) VALUES (?, ?, ?)",
+              (session['user_id'], recipient_id, content))
     conn.commit()
     conn.close()
     
-    flash('Сотрудник добавлен', 'success')
-    return redirect(url_for('employees'))
+    log_action(session['user_id'], 'send_message', f'To user {recipient_id}')
+    flash('Сообщение отправлено', 'success')
+    return redirect(url_for('messages'))
 
-@app.route('/employees/delete/<int:id>')
+@app.route('/feedback', methods=['GET', 'POST'])
 @login_required
-def delete_employee(id):
-    """Удалить сотрудника"""
+def feedback():
+    if request.method == 'POST':
+        content = request.form.get('content')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO feedback (user_id, content) VALUES (?, ?)",
+                  (session['user_id'], content))
+        conn.commit()
+        conn.close()
+        log_action(session['user_id'], 'feedback', content[:50])
+        flash('Обратная связь отправлена', 'success')
+        return redirect(url_for('feedback'))
+    
+    return render_template('feedback.html')
+
+@app.route('/logs')
+@login_required
+@role_required(['admin'])
+def logs():
     conn = get_db()
     c = conn.cursor()
-    c.execute('UPDATE employees SET active = 0 WHERE id = ?', (id,))
-    conn.commit()
+    c.execute("SELECT l.*, u.username FROM logs l JOIN users u ON l.user_id = u.id ORDER BY l.timestamp DESC LIMIT 100")
+    logs_list = c.fetchall()
     conn.close()
-    
-    flash('Сотрудник удалён', 'success')
-    return redirect(url_for('employees'))
+    return render_template('logs.html', logs=logs_list)
 
-@app.route('/time/add', methods=['POST'])
-@login_required
-def add_time_entry():
-    """Добавить запись времени"""
-    employee_id = request.form.get('employee_id')
-    date = request.form.get('date')
-    start_time = request.form.get('start_time')
-    end_time = request.form.get('end_time')
-    break_minutes = request.form.get('break_minutes', 0)
-    task_description = request.form.get('task_description')
-    project = request.form.get('project')
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''INSERT INTO time_entries 
-                 (employee_id, date, start_time, end_time, break_minutes, task_description, project)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)',
-              (employee_id, date, start_time, end_time, break_minutes, task_description, project))
-    conn.commit()
-    conn.close()
-    
-    flash('Запись добавлена', 'success')
-    return redirect(url_for('dashboard'))
 
-@app.route('/time/stop/<int:id>')
-@login_required
-def stop_time_entry(id):
-    """Остановить запись времени"""
-    conn = get_db()
-    c = conn.cursor()
-    current_time = datetime.now().strftime('%H:%M')
-    c.execute('UPDATE time_entries SET end_time = ? WHERE id = ? AND end_time IS NULL', 
-              (current_time, id))
-    conn.commit()
-    conn.close()
-    
-    flash('Запись остановлена', 'success')
-    return redirect(url_for('dashboard'))
-
-@app.route('/reports')
-@login_required
-def reports():
-    """Отчёты"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Получаем даты за последние 30 дней
-    end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=30)
-    
-    # Записи за период
-    c.execute('''SELECT te.*, e.name as employee_name, e.hourly_rate
-                 FROM time_entries te 
-                 JOIN employees e ON te.employee_id = e.id 
-                 WHERE te.date >= ? AND te.date <= ?
-                 ORDER BY te.date DESC, te.start_time DESC''', 
-              (start_date, end_date))
-    entries = c.fetchall()
-    
-    # Сводка по сотрудникам
-    c.execute('''SELECT e.name, 
-                 COUNT(*) as entries_count,
-                 SUM(
-                    (julianday(te.end_time) - julianday(te.start_time)) * 24 * 60 - COALESCE(te.break_minutes, 0)
-                 ) as total_minutes,
-                 SUM(e.hourly_rate * (
-                    (julianday(te.end_time) - julianday(te.start_time)) * 24 - COALESCE(te.break_minutes, 0)/60
-                 )) as total_cost
-                 FROM time_entries te
-                 JOIN employees e ON te.employee_id = e.id
-                 WHERE te.date >= ? AND te.date <= ? AND te.end_time IS NOT NULL
-                 GROUP BY e.id''', (start_date, end_date))
-    summary = c.fetchall()
-    
-    conn.close()
-    
-    return render_template('reports.html', 
-                         entries=entries,
-                         summary=summary,
-                         start_date=start_date,
-                         end_date=end_date)
+# API эндпоинты для AJAX
 
 @app.route('/api/stats')
 @login_required
 def api_stats():
-    """API для статистики"""
     conn = get_db()
     c = conn.cursor()
     
-    # Статистика за сегодня
-    today = datetime.now().date()
-    c.execute('''SELECT 
-        COUNT(*) as entries_count,
-        SUM((julianday(te.end_time) - julianday(te.start_time)) * 24 * 60 - COALESCE(te.break_minutes, 0)) as total_minutes
-        FROM time_entries te
-        WHERE te.date = ? AND te.end_time IS NOT NULL''', (today,))
-    today_stats = c.fetchone()
+    if session.get('role') == 'admin':
+        c.execute("SELECT COUNT(*) as c FROM orders WHERE date = date('now')")
+        orders = c.fetchone()['c']
+        c.execute("SELECT SUM(profit) as p FROM orders WHERE date = date('now')")
+        profit = c.fetchone()['p'] or 0
+    else:
+        c.execute("SELECT id FROM users WHERE username = ?", (session['username'],))
+        manager = c.fetchone()
+        c.execute("SELECT COUNT(*) as c FROM orders WHERE manager_id = ? AND date = date('now')", (manager['id'],))
+        orders = c.fetchone()['c']
+        c.execute("SELECT SUM(profit) as p FROM orders WHERE manager_id = ? AND date = date('now')", (manager['id'],))
+        profit = c.fetchone()['p'] or 0
     
     conn.close()
-    
-    return jsonify({
-        'today_entries': today_stats['entries_count'] or 0,
-        'today_minutes': int(today_stats['total_minutes'] or 0)
-    })
-
-@app.route('/settings')
-@login_required
-def settings():
-    """Настройки"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM settings')
-    settings = {row['key']: row['value'] for row in c.fetchall()}
-    conn.close()
-    return render_template('settings.html', settings=settings)
-
-@app.route('/settings/save', methods=['POST'])
-@login_required
-def save_settings():
-    """Сохранить настройки"""
-    work_start = request.form.get('work_start')
-    work_end = request.form.get('work_end')
-    break_duration = request.form.get('break_duration')
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ('work_start', work_start))
-    c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ('work_end', work_end))
-    c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ('break_duration', break_duration))
-    conn.commit()
-    conn.close()
-    
-    flash('Настройки сохранены', 'success')
-    return redirect(url_for('settings'))
+    return jsonify({'orders': orders, 'profit': profit})
 
 if __name__ == '__main__':
-    # Инициализируем БД при первом запуске
     if not os.path.exists(DATABASE):
         init_db()
         print(f"База данных {DATABASE} создана")
